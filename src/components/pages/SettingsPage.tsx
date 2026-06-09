@@ -13,12 +13,11 @@ import {
   deleteWalletPermanently,
   lockCurrentWallet,
 } from '@/lib/wallet-manager';
-import { saveSettings, getSettings } from '@/lib/storage';
 
 type SettingsModal = 'none' | 'change-password' | 'export-key' | 'export-phrase' | 'delete-wallet';
 
 export function SettingsPage() {
-  const { wallet, setCurrentPage, rpcEndpoint, setRpcEndpoint, lockWallet, refreshWallet } = useWalletContext();
+  const { wallet, setCurrentPage, lockWallet, refreshWallet } = useWalletContext();
   const [activeModal, setActiveModal] = useState<SettingsModal>('none');
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -38,8 +37,7 @@ export function SettingsPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // RPC State
-  const [tempRpc, setTempRpc] = useState(rpcEndpoint);
+  // RPC State - no longer editable by user
 
   const [error, setError] = useState('');
 
@@ -130,20 +128,6 @@ export function SettingsPage() {
     }
   };
 
-  const handleSaveRpc = async () => {
-    try {
-      setRpcEndpoint(tempRpc);
-      const settings = await getSettings();
-      if (settings) {
-        settings.rpcEndpoint = tempRpc;
-        await saveSettings(settings);
-      }
-      setToast({ message: 'RPC endpoint updated', type: 'success' });
-    } catch {
-      setToast({ message: 'Failed to save settings', type: 'error' });
-    }
-  };
-
   const handleCopyExported = async () => {
     await navigator.clipboard.writeText(exportedData);
     setToast({ message: 'Copied to clipboard (auto-clears in 60s)', type: 'success' });
@@ -177,20 +161,9 @@ export function SettingsPage() {
           {/* Network Settings */}
           <div className="card">
             <h3 className="font-semibold mb-3">Network</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="input-label">RPC Endpoint</label>
-                <input
-                  type="text"
-                  value={tempRpc}
-                  onChange={(e) => setTempRpc(e.target.value)}
-                  className="input-field text-sm font-mono"
-                  placeholder="https://mainnet.helius-rpc.com/?api-key=..."
-                />
-              </div>
-              <button onClick={handleSaveRpc} className="btn-secondary text-sm py-2 px-4">
-                Save Endpoint
-              </button>
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-gray-400">RPC Endpoint</span>
+              <span className="text-sm text-green-400 font-medium">Connected (Helius)</span>
             </div>
           </div>
 
