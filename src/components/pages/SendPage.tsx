@@ -214,8 +214,8 @@ export function SendPage() {
   };
 
   const renderTokenPicker = () => (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-end justify-center animate-fade-in">
-      <div className="bg-grokie-dark-gray w-full max-w-md rounded-t-2xl p-6 max-h-[70vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center animate-fade-in">
+      <div className="bg-grokie-dark-gray w-full max-w-md rounded-2xl p-6 max-h-[70vh] overflow-y-auto mx-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">Select Token</h3>
           <button
