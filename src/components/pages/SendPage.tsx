@@ -214,8 +214,8 @@ export function SendPage() {
   };
 
   const renderTokenPicker = () => (
-    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center animate-fade-in">
-      <div className="bg-grokie-dark-gray w-full max-w-md rounded-2xl p-6 max-h-[70vh] overflow-y-auto mx-4">
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-start justify-center pt-20 animate-fade-in">
+      <div className="bg-grokie-dark-gray w-full max-w-md rounded-2xl p-6 mx-4 flex flex-col" style={{ maxHeight: '50vh' }}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg">Select Token</h3>
           <button
@@ -231,7 +231,7 @@ export function SendPage() {
         {tokens.length === 0 ? (
           <p className="text-center text-gray-400 py-8">No tokens with balance found.</p>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-2 overflow-y-auto pr-1">
             {tokens.map((token) => (
               <button
                 key={token.mint}
