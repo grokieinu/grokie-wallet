@@ -185,7 +185,7 @@ export function SettingsPage() {
                   value={tempRpc}
                   onChange={(e) => setTempRpc(e.target.value)}
                   className="input-field text-sm font-mono"
-                  placeholder="https://api.mainnet-beta.solana.com"
+                  placeholder="https://mainnet.helius-rpc.com/?api-key=..."
                 />
               </div>
               <button onClick={handleSaveRpc} className="btn-secondary text-sm py-2 px-4">

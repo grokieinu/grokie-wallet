@@ -8,7 +8,7 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { getAllWallets, getSettings, type WalletRecord } from '@/lib/storage';
+import { getAllWallets, getSettings, saveSettings, type WalletRecord } from '@/lib/storage';
 import { getSessionState, lockSession } from '@/lib/session';
 import { getDefaultRpcEndpoint } from '@/lib/rpc';
 
@@ -63,7 +63,16 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         const session = getSessionState();
 
         if (settings?.rpcEndpoint) {
-          setRpcEndpoint(settings.rpcEndpoint);
+          // Auto-migrate: if still using old public RPC, upgrade to Helius
+          const defaultRpc = getDefaultRpcEndpoint();
+          if (settings.rpcEndpoint === 'https://api.mainnet-beta.solana.com') {
+            setRpcEndpoint(defaultRpc);
+            // Update saved settings to Helius
+            settings.rpcEndpoint = defaultRpc;
+            await saveSettings(settings);
+          } else {
+            setRpcEndpoint(settings.rpcEndpoint);
+          }
         }
 
         if (wallets.length > 0) {
