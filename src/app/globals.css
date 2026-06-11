@@ -8,7 +8,7 @@
   }
 
   body {
-    @apply bg-grokie-black text-grokie-white;
+    @apply bg-[#050a12] text-grokie-white;
   }
 
   /* Hide number input spinners */

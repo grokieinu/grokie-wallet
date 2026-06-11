@@ -25,7 +25,8 @@ export type AppPage =
   | 'transactions'
   | 'settings'
   | 'two-factor'
-  | 'unlock';
+  | 'unlock'
+  | 'token-detail';
 
 interface WalletContextType {
   currentPage: AppPage;
@@ -41,6 +42,8 @@ interface WalletContextType {
   lockWallet: () => void;
   tempSeedPhrase: string | null;
   setTempSeedPhrase: (phrase: string | null) => void;
+  selectedTokenId: string | null;
+  setSelectedTokenId: (id: string | null) => void;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -53,6 +56,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const [rpcEndpoint, setRpcEndpoint] = useState(getDefaultRpcEndpoint());
   // SECURITY: Temporary seed phrase stored in state only during backup flow
   const [tempSeedPhrase, setTempSeedPhrase] = useState<string | null>(null);
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
   // Initialize - check if wallet exists
   useEffect(() => {
@@ -143,6 +147,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         lockWallet,
         tempSeedPhrase,
         setTempSeedPhrase,
+        selectedTokenId,
+        setSelectedTokenId,
       }}
     >
       {children}

@@ -18,6 +18,8 @@ const config: Config = {
           'mid-gray': '#2A2A2A',
           'light-gray': '#3A3A3A',
           white: '#FAFAFA',
+          cyan: '#22D3EE',
+          'cyan-dark': '#0E7490',
         },
       },
       fontFamily: {

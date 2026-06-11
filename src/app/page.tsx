@@ -16,6 +16,7 @@ import { TransactionsPage } from '@/components/pages/TransactionsPage';
 import { SettingsPage } from '@/components/pages/SettingsPage';
 import { TwoFactorPage } from '@/components/pages/TwoFactorPage';
 import { UnlockPage } from '@/components/pages/UnlockPage';
+import { TokenDetailPage } from '@/components/pages/TokenDetailPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { SplashScreen } from '@/components/ui/SplashScreen';
 
@@ -57,6 +58,8 @@ function AppContent() {
       return <TwoFactorPage />;
     case 'unlock':
       return <UnlockPage />;
+    case 'token-detail':
+      return <TokenDetailPage />;
     default:
       return <WelcomePage />;
   }
