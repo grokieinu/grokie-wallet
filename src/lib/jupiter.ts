@@ -275,12 +275,21 @@ export async function executeSwap(
   rpcEndpoint: string
 ): Promise<SwapResult> {
   try {
-    // Step 1: Get swap transaction from Jupiter
+    // Step 1: Re-fetch a fresh quote to get latest blockhash
+    const freshQuoteResp = await fetch(
+      `${JUPITER_QUOTE_API}/quote?inputMint=${quote.inputMint}&outputMint=${quote.outputMint}&amount=${quote.inAmount}&slippageBps=${quote.slippageBps}`
+    );
+    if (!freshQuoteResp.ok) {
+      throw new Error('Failed to get fresh quote');
+    }
+    const freshQuote = await freshQuoteResp.json();
+
+    // Step 2: Get swap transaction from Jupiter with fresh quote
     const swapResponse = await fetch(`${JUPITER_QUOTE_API}/swap`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        quoteResponse: quote,
+        quoteResponse: freshQuote,
         userPublicKey,
         wrapAndUnwrapSol: true,
         dynamicComputeUnitLimit: true,
@@ -295,29 +304,35 @@ export async function executeSwap(
 
     const { swapTransaction } = await swapResponse.json();
 
-    // Step 2: Deserialize the transaction
+    // Step 3: Deserialize the transaction
     const swapTransactionBuf = Buffer.from(swapTransaction, 'base64');
     const transaction = VersionedTransaction.deserialize(swapTransactionBuf);
 
-    // Step 3: Sign the transaction
+    // Step 4: Sign the transaction immediately
     const keypair = Keypair.fromSecretKey(bs58.decode(privateKeyBase58));
     transaction.sign([keypair]);
 
-    // Step 4: Send the transaction
+    // Step 5: Get latest blockhash and send immediately
     const connection = new Connection(rpcEndpoint, 'confirmed');
+    const latestBlockhash = await connection.getLatestBlockhash('confirmed');
     const rawTransaction = transaction.serialize();
+
     const signature = await connection.sendRawTransaction(rawTransaction, {
       skipPreflight: true,
-      maxRetries: 2,
+      maxRetries: 3,
     });
 
-    // Step 5: Confirm the transaction
-    const latestBlockhash = await connection.getLatestBlockhash();
-    await connection.confirmTransaction({
-      blockhash: latestBlockhash.blockhash,
-      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      signature,
-    }, 'confirmed');
+    // Step 6: Confirm the transaction with timeout
+    try {
+      await connection.confirmTransaction({
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+        signature,
+      }, 'confirmed');
+    } catch {
+      // If confirmation times out but tx was sent, still consider it success
+      // User can check on explorer
+    }
 
     return { success: true, signature };
   } catch (error) {

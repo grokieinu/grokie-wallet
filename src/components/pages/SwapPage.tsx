@@ -35,6 +35,8 @@ export function SwapPage() {
   const [showFromPicker, setShowFromPicker] = useState(false);
   const [showToPicker, setShowToPicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [txSignature, setTxSignature] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<JupiterTokenInfo[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -129,22 +131,29 @@ export function SwapPage() {
     return () => clearTimeout(debounce);
   }, [fromToken, toToken, fromAmount, slippage]);
 
-  const handleSwap = async () => {
+  const handleSwap = () => {
+    if (!wallet || !quote || !fromToken || !toToken) return;
+    if (parseFloat(fromAmount) > fromToken.balance) {
+      setError(`Insufficient ${fromToken.symbol} balance.`);
+      return;
+    }
+    setError('');
+    setShowConfirm(true);
+  };
+
+  const executeConfirmedSwap = async () => {
     if (!wallet || !quote || !fromToken || !toToken) return;
 
     const privateKey = getActivePrivateKey();
     if (!privateKey) {
       setError('Session expired. Please unlock your wallet again.');
-      return;
-    }
-
-    if (parseFloat(fromAmount) > fromToken.balance) {
-      setError(`Insufficient ${fromToken.symbol} balance.`);
+      setShowConfirm(false);
       return;
     }
 
     setIsSwapping(true);
     setError('');
+    setShowConfirm(false);
 
     try {
       const result = await executeSwap(quote, wallet.publicKey, privateKey, rpcEndpoint);
@@ -165,21 +174,23 @@ export function SwapPage() {
         };
         await saveTransaction(txRecord);
 
-        setToast({ message: `Swapped ${fromAmount} ${fromToken.symbol} → ${toAmount} ${toToken.symbol}`, type: 'success' });
-        setFromAmount('');
-        setToAmount('');
-        setQuote(null);
-
-        // Refresh balances
-        fetchTokens();
+        setTxSignature(result.signature);
       } else {
-        setError(result.error || 'Swap failed.');
+        setError(result.error || 'Swap failed. Please try again.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Swap failed.');
     } finally {
       setIsSwapping(false);
     }
+  };
+
+  const resetSwap = () => {
+    setTxSignature('');
+    setFromAmount('');
+    setToAmount('');
+    setQuote(null);
+    fetchTokens();
   };
 
   const handleFlipTokens = () => {
@@ -581,6 +592,88 @@ export function SwapPage() {
       {/* Token Pickers */}
       {showFromPicker && renderTokenPicker(true, () => setShowFromPicker(false))}
       {showToPicker && renderTokenPicker(false, () => setShowToPicker(false))}
+
+      {/* Confirmation Modal */}
+      {showConfirm && quote && fromToken && toToken && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center animate-fade-in">
+          <div className="bg-[#0c1929] border border-[#1a3a5c] w-full max-w-md rounded-2xl p-6 mx-4">
+            <h3 className="font-bold text-lg text-white text-center mb-4">Confirm Swap</h3>
+            
+            <div className="space-y-3 mb-5">
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#1a2a3a]">
+                <span className="text-sm text-gray-400">You pay</span>
+                <span className="text-sm font-bold text-white">{fromAmount} {fromToken.symbol}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#1a2a3a]">
+                <span className="text-sm text-gray-400">You receive</span>
+                <span className="text-sm font-bold text-white">{toAmount} {toToken.symbol}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#1a2a3a]">
+                <span className="text-sm text-gray-400">Rate</span>
+                <span className="text-xs text-gray-300">1 {fromToken.symbol} ≈ {(parseFloat(toAmount) / parseFloat(fromAmount)).toFixed(4)} {toToken.symbol}</span>
+              </div>
+              <div className="flex justify-between items-center p-3 rounded-xl bg-[#1a2a3a]">
+                <span className="text-sm text-gray-400">Price Impact</span>
+                <span className={`text-xs ${parseFloat(quote.priceImpactPct) > 1 ? 'text-red-400' : 'text-green-400'}`}>{parseFloat(quote.priceImpactPct).toFixed(3)}%</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-500 text-center mb-4">
+              This transaction is irreversible. Make sure the details are correct.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => setShowConfirm(false)}
+                className="py-3 rounded-xl bg-[#1a2a3a] border border-[#2a3a4a] text-sm text-gray-300 font-medium hover:bg-[#2a3a4a] transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={executeConfirmedSwap}
+                className="py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-sm text-white font-semibold hover:from-cyan-500 hover:to-blue-500 transition-all"
+              >
+                Confirm Swap
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success Screen */}
+      {txSignature && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center animate-fade-in">
+          <div className="bg-[#0c1929] border border-[#1a3a5c] w-full max-w-md rounded-2xl p-6 mx-4 text-center">
+            <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
+              <svg className="w-8 h-8 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+            <h3 className="font-bold text-xl text-white mb-2">Swap Successful!</h3>
+            <p className="text-sm text-gray-400 mb-4">
+              {fromAmount} {fromToken?.symbol} → {toAmount} {toToken?.symbol}
+            </p>
+            <div className="bg-[#1a2a3a] rounded-xl p-3 mb-4">
+              <p className="text-[10px] text-gray-500 mb-1">Transaction Signature</p>
+              <p className="text-xs font-mono text-gray-300 break-all">{txSignature}</p>
+            </div>
+            <a
+              href={`https://solscan.io/tx/${txSignature}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block w-full py-3 rounded-xl bg-[#1a2a3a] border border-[#2a3a4a] text-sm text-cyan-400 font-medium mb-3 hover:border-cyan-500/50 transition-all"
+            >
+              View on Solscan ↗
+            </a>
+            <button
+              onClick={resetSwap}
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 text-sm text-white font-semibold hover:from-cyan-500 hover:to-blue-500 transition-all"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
     </div>

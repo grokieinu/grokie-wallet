@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWalletContext } from '@/context/WalletContext';
 import { getCoinDetail, getCoinChart, formatPercentChange, formatLargeNumber, type CoinDetailData, type ChartData } from '@/lib/coingecko';
-import { getSOLBalance, getRecentTransactions } from '@/lib/solana';
+import { getSOLBalance, getSPLTokenBalances, getRecentTransactions } from '@/lib/solana';
 import { getTransactions, type TransactionRecord } from '@/lib/storage';
 import { formatUSD } from '@/lib/price';
 import { Toast } from '@/components/ui/Toast';
@@ -19,32 +19,123 @@ interface DisplayTransaction {
   status: string;
 }
 
+interface GeckoTokenData {
+  name: string;
+  symbol: string;
+  price: number;
+  change24h: number;
+  logoURI?: string;
+  marketCap?: number;
+  volume24h?: number;
+  totalSupply?: number;
+  description?: string;
+  website?: string;
+}
+
 export function TokenDetailPage() {
   const { selectedTokenId, setCurrentPage, wallet, rpcEndpoint } = useWalletContext();
   const [coinDetail, setCoinDetail] = useState<CoinDetailData | null>(null);
+  const [geckoTokenData, setGeckoTokenData] = useState<GeckoTokenData | null>(null);
   const [chartData, setChartData] = useState<ChartData | null>(null);
+  const [geckoChartPrices, setGeckoChartPrices] = useState<[number, number][]>([]);
   const [timeRange, setTimeRange] = useState<TimeRange>('1');
   const [isLoading, setIsLoading] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [solBalance, setSolBalance] = useState<number>(0);
+  const [tokenBalance, setTokenBalance] = useState<number>(0);
   const [transactions, setTransactions] = useState<DisplayTransaction[]>([]);
+
+  const isSolana = selectedTokenId === 'solana';
+  const isMintAddress = selectedTokenId ? /^[1-9A-HJ-NP-Za-km-z]{30,50}$/.test(selectedTokenId) : false;
+
+  // Map timeRange to GeckoTerminal timeframe
+  const getGeckoTimeframe = (range: TimeRange): string => {
+    switch (range) {
+      case '0.04': return 'minute';
+      case '0.08': return 'hour';
+      case '1': return 'day';
+      case '7': return 'day';
+      case '30': return 'day';
+      case '90': return 'day';
+      case '365': return 'day';
+      default: return 'day';
+    }
+  };
 
   const fetchData = useCallback(async () => {
     if (!selectedTokenId) return;
     setIsLoading(true);
     try {
-      const [detail, chart] = await Promise.all([
-        getCoinDetail(selectedTokenId),
-        getCoinChart(selectedTokenId, parseFloat(timeRange)),
-      ]);
-      setCoinDetail(detail);
-      setChartData(chart);
+      if (isSolana) {
+        // Use CoinGecko for SOL
+        const [detail, chart] = await Promise.all([
+          getCoinDetail('solana'),
+          getCoinChart('solana', parseFloat(timeRange)),
+        ]);
+        setCoinDetail(detail);
+        setChartData(chart);
+      } else if (isMintAddress) {
+        // Use GeckoTerminal for SPL tokens
+        try {
+          const [tokenResp, poolResp] = await Promise.all([
+            fetch(`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${selectedTokenId}`),
+            fetch(`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${selectedTokenId}/pools?page=1`),
+          ]);
+
+          if (tokenResp.ok) {
+            const tokenData = await tokenResp.json();
+            const attrs = tokenData?.data?.attributes;
+            if (attrs) {
+              setGeckoTokenData({
+                name: attrs.name || 'Unknown',
+                symbol: attrs.symbol || '???',
+                price: parseFloat(attrs.price_usd) || 0,
+                change24h: attrs.price_change_percentage?.h24 ? parseFloat(attrs.price_change_percentage.h24) : 0,
+                logoURI: (attrs.image_url && attrs.image_url !== 'missing.png' && attrs.image_url.startsWith('http')) ? attrs.image_url : undefined,
+                marketCap: attrs.fdv_usd ? parseFloat(attrs.fdv_usd) : undefined,
+                volume24h: attrs.volume_usd?.h24 ? parseFloat(attrs.volume_usd.h24) : undefined,
+                totalSupply: attrs.total_supply ? parseFloat(attrs.total_supply) : undefined,
+                description: attrs.description || undefined,
+              });
+            }
+          }
+
+          // Get pool for OHLCV chart
+          if (poolResp.ok) {
+            const poolData = await poolResp.json();
+            const topPool = poolData?.data?.[0];
+            if (topPool) {
+              const poolAddress = topPool.attributes?.address || topPool.id?.replace('solana_', '');
+              if (poolAddress) {
+                const tf = getGeckoTimeframe(timeRange);
+                const ohlcvResp = await fetch(
+                  `https://api.geckoterminal.com/api/v2/networks/solana/pools/${poolAddress}/ohlcv/${tf}?limit=100`
+                );
+                if (ohlcvResp.ok) {
+                  const ohlcvData = await ohlcvResp.json();
+                  const list = ohlcvData?.data?.attributes?.ohlcv_list;
+                  if (Array.isArray(list) && list.length > 0) {
+                    // ohlcv_list format: [timestamp, open, high, low, close, volume]
+                    const prices: [number, number][] = list.map((item: number[]) => [
+                      item[0] * 1000, // timestamp ms
+                      item[4], // close price
+                    ] as [number, number]).reverse();
+                    setGeckoChartPrices(prices);
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          // silent
+        }
+      }
     } catch {
       // silent fail
     } finally {
       setIsLoading(false);
     }
-  }, [selectedTokenId, timeRange]);
+  }, [selectedTokenId, timeRange, isSolana, isMintAddress]);
 
   // Fetch wallet balance and transactions
   useEffect(() => {
@@ -52,12 +143,21 @@ export function TokenDetailPage() {
       if (!wallet) return;
 
       // Fetch SOL balance
-      if (selectedTokenId === 'solana') {
+      if (isSolana) {
         try {
           const bal = await getSOLBalance(wallet.publicKey, rpcEndpoint);
           setSolBalance(bal);
         } catch {
           setSolBalance(0);
+        }
+      } else if (isMintAddress) {
+        // Fetch SPL token balance
+        try {
+          const splTokens = await getSPLTokenBalances(wallet.publicKey, rpcEndpoint);
+          const found = splTokens.find((t) => t.mint === selectedTokenId);
+          setTokenBalance(found?.balance || 0);
+        } catch {
+          setTokenBalance(0);
         }
       }
 
@@ -128,9 +228,22 @@ export function TokenDetailPage() {
     return null;
   }
 
-  const price = coinDetail?.market_data?.current_price?.usd || 0;
-  const change24h = coinDetail?.market_data?.price_change_percentage_24h || 0;
+  const price = isSolana
+    ? (coinDetail?.market_data?.current_price?.usd || 0)
+    : (geckoTokenData?.price || 0);
+  const change24h = isSolana
+    ? (coinDetail?.market_data?.price_change_percentage_24h || 0)
+    : (geckoTokenData?.change24h || 0);
   const changeFormatted = formatPercentChange(change24h);
+
+  const tokenName = isSolana ? (coinDetail?.name || 'Solana') : (geckoTokenData?.name || selectedTokenId || '');
+  const tokenSymbol = isSolana ? 'SOL' : (geckoTokenData?.symbol?.toUpperCase() || '');
+  const tokenLogo = isSolana ? coinDetail?.image?.large : geckoTokenData?.logoURI;
+  const displayBalance = isSolana ? solBalance : tokenBalance;
+  const balanceUsd = displayBalance * price;
+
+  // Chart data: use CoinGecko for SOL, GeckoTerminal for SPL
+  const chartPrices = isSolana ? (chartData?.prices || []) : geckoChartPrices;
 
   return (
     <div className="min-h-screen flex flex-col bg-[#050a12] animate-fade-in">
@@ -158,14 +271,18 @@ export function TokenDetailPage() {
       <div className="px-5 pb-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            {coinDetail?.image?.large && (
+            {tokenLogo ? (
               <div className="w-10 h-10 rounded-full overflow-hidden bg-[#1a1a2e]">
-                <img src={coinDetail.image.large} alt={coinDetail.name} className="w-10 h-10 object-cover" />
+                <img src={tokenLogo} alt={tokenName} className="w-10 h-10 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              </div>
+            ) : (
+              <div className="w-10 h-10 rounded-full bg-[#1a2a3a] flex items-center justify-center">
+                <span className="text-xs text-gray-400 font-bold">{tokenSymbol.slice(0, 3)}</span>
               </div>
             )}
             <div>
-              <p className="font-bold text-lg text-white">{coinDetail?.name || selectedTokenId}</p>
-              <p className="text-xs text-gray-500">{coinDetail?.symbol?.toUpperCase()}</p>
+              <p className="font-bold text-lg text-white">{tokenName}</p>
+              <p className="text-xs text-gray-500">{tokenSymbol}</p>
             </div>
           </div>
           <div className="text-right">
@@ -184,8 +301,8 @@ export function TokenDetailPage() {
             <div className="flex items-center justify-center h-full w-full">
               <div className="w-6 h-6 border-2 border-gray-700 border-t-cyan-400 rounded-full animate-spin" />
             </div>
-          ) : chartData && chartData.prices.length > 0 ? (
-            <MiniChart data={chartData.prices} isPositive={change24h >= 0} />
+          ) : chartPrices.length > 0 ? (
+            <MiniChart data={chartPrices} isPositive={change24h >= 0} />
           ) : (
             <p className="text-gray-500 text-sm">Chart unavailable</p>
           )}
@@ -223,13 +340,9 @@ export function TokenDetailPage() {
           <div className="flex items-center justify-between">
             <span className="text-sm text-gray-400">Your balance</span>
             <div className="text-right">
-              <p className="font-bold text-white">
-                {selectedTokenId === 'solana' ? formatUSD(solBalance * price) : '$0.00'}
-              </p>
+              <p className="font-bold text-white">{formatUSD(balanceUsd)}</p>
               <p className="text-xs text-gray-500">
-                {selectedTokenId === 'solana'
-                  ? `${solBalance === 0 ? '0' : solBalance.toFixed(4)} ${coinDetail?.symbol?.toUpperCase() || 'SOL'}`
-                  : `0 ${coinDetail?.symbol?.toUpperCase() || ''}`}
+                {displayBalance === 0 ? '0' : displayBalance.toFixed(4)} {tokenSymbol}
               </p>
             </div>
           </div>
@@ -310,19 +423,23 @@ export function TokenDetailPage() {
           <div>
             <p className="text-xs text-gray-500 mb-1">Market Cap</p>
             <p className="text-sm font-medium text-white">
-              {formatLargeNumber(coinDetail?.market_data?.market_cap?.usd)}
+              {isSolana
+                ? formatLargeNumber(coinDetail?.market_data?.market_cap?.usd)
+                : geckoTokenData?.marketCap ? formatLargeNumber(geckoTokenData.marketCap) : '-'}
             </p>
           </div>
           <div>
             <p className="text-xs text-gray-500 mb-1">24H Volume</p>
             <p className="text-sm font-medium text-white">
-              {formatLargeNumber(coinDetail?.market_data?.total_volume?.usd)}
+              {isSolana
+                ? formatLargeNumber(coinDetail?.market_data?.total_volume?.usd)
+                : geckoTokenData?.volume24h ? formatLargeNumber(geckoTokenData.volume24h) : '-'}
             </p>
           </div>
           <div>
             <p className="text-xs text-gray-500 mb-1">Circulating Supply</p>
             <p className="text-sm font-medium text-white">
-              {coinDetail?.market_data?.circulating_supply
+              {isSolana && coinDetail?.market_data?.circulating_supply
                 ? `${(coinDetail.market_data.circulating_supply / 1_000_000).toFixed(2)}M`
                 : '-'}
             </p>
@@ -330,15 +447,15 @@ export function TokenDetailPage() {
           <div>
             <p className="text-xs text-gray-500 mb-1">Total Supply</p>
             <p className="text-sm font-medium text-white">
-              {coinDetail?.market_data?.total_supply
+              {isSolana && coinDetail?.market_data?.total_supply
                 ? `${(coinDetail.market_data.total_supply / 1_000_000).toFixed(2)}M`
-                : '-'}
+                : geckoTokenData?.totalSupply ? `${(geckoTokenData.totalSupply / 1_000_000).toFixed(2)}M` : '-'}
             </p>
           </div>
           <div>
             <p className="text-xs text-gray-500 mb-1">Max Supply</p>
             <p className="text-sm font-medium text-white">
-              {coinDetail?.market_data?.max_supply
+              {isSolana && coinDetail?.market_data?.max_supply
                 ? `${(coinDetail.market_data.max_supply / 1_000_000).toFixed(2)}M`
                 : '-'}
             </p>
@@ -346,7 +463,7 @@ export function TokenDetailPage() {
           <div>
             <p className="text-xs text-gray-500 mb-1">Created</p>
             <p className="text-sm font-medium text-white">
-              {coinDetail?.genesis_date || '-'}
+              {isSolana ? (coinDetail?.genesis_date || '-') : '-'}
             </p>
           </div>
         </div>
@@ -356,7 +473,7 @@ export function TokenDetailPage() {
       <div className="px-5 pb-10">
         <h3 className="text-sm font-semibold text-white mb-3">About</h3>
         <div className="flex flex-wrap gap-2 mb-4">
-          {coinDetail?.links?.homepage?.[0] && (
+          {isSolana && coinDetail?.links?.homepage?.[0] && (
             <a
               href={coinDetail.links.homepage[0]}
               target="_blank"
@@ -369,20 +486,19 @@ export function TokenDetailPage() {
               Website
             </a>
           )}
-          {coinDetail?.links?.twitter_screen_name && (
+          {isSolana && coinDetail?.links?.twitter_screen_name && (
             <a
               href={`https://x.com/${coinDetail.links.twitter_screen_name}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1a2a3a] border border-[#2a3a4a] text-xs text-gray-300 hover:border-cyan-500/50 transition-all"
             >
-              <span className="font-bold">𝕏</span>
-              X
+              <span className="font-bold">𝕏</span> X
             </a>
           )}
-          {coinDetail?.links?.blockchain_site?.[0] && (
+          {!isSolana && selectedTokenId && (
             <a
-              href={coinDetail.links.blockchain_site[0]}
+              href={`https://solscan.io/token/${selectedTokenId}`}
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1a2a3a] border border-[#2a3a4a] text-xs text-gray-300 hover:border-cyan-500/50 transition-all"
@@ -390,14 +506,33 @@ export function TokenDetailPage() {
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              Explorer
+              Solscan
+            </a>
+          )}
+          {!isSolana && selectedTokenId && (
+            <a
+              href={`https://www.geckoterminal.com/solana/tokens/${selectedTokenId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#1a2a3a] border border-[#2a3a4a] text-xs text-gray-300 hover:border-cyan-500/50 transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+              </svg>
+              GeckoTerminal
             </a>
           )}
         </div>
-        {coinDetail?.description?.en && (
+        {isSolana && coinDetail?.description?.en && (
           <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">
             {coinDetail.description.en.replace(/<[^>]*>/g, '').slice(0, 300)}
             {coinDetail.description.en.length > 300 ? '...' : ''}
+          </p>
+        )}
+        {!isSolana && geckoTokenData?.description && (
+          <p className="text-xs text-gray-500 leading-relaxed line-clamp-4">
+            {geckoTokenData.description.slice(0, 300)}
+            {geckoTokenData.description.length > 300 ? '...' : ''}
           </p>
         )}
       </div>

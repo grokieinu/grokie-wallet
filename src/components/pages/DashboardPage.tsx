@@ -3,18 +3,29 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useWalletContext } from '@/context/WalletContext';
 import { getSOLBalance, getSPLTokenBalances, type TokenBalance } from '@/lib/solana';
-import { getTokenPrices, formatUSD } from '@/lib/price';
+import { formatUSD } from '@/lib/price';
 import { getMarketData, formatPercentChange, type CoinMarketData } from '@/lib/coingecko';
 import { TokenIcon } from '@/components/ui/TokenIcon';
 import { Toast } from '@/components/ui/Toast';
 
 type TabType = 'tokens' | 'nfts' | 'activity';
 
+interface TokenDisplayData {
+  mint: string;
+  symbol: string;
+  name: string;
+  balance: number;
+  uiBalance: string;
+  price: number;
+  change24h: number;
+  logoURI?: string;
+}
+
 export function DashboardPage() {
   const { wallet, setCurrentPage, rpcEndpoint, lockWallet, setSelectedTokenId } = useWalletContext();
   const [balance, setBalance] = useState<number>(0);
   const [tokens, setTokens] = useState<TokenBalance[]>([]);
-  const [tokenPrices, setTokenPrices] = useState<Map<string, number>>(new Map());
+  const [tokenDisplayData, setTokenDisplayData] = useState<TokenDisplayData[]>([]);
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [activeTab, setActiveTab] = useState<TabType>('tokens');
@@ -34,10 +45,48 @@ export function DashboardPage() {
       setTokens(splTokens);
       setMarketCoins(market);
 
-      if (splTokens.length > 0) {
-        const mints = splTokens.map((t) => t.mint);
-        const prices = await getTokenPrices(mints).catch(() => new Map<string, number>());
-        setTokenPrices(prices);
+      // Fetch price/logo/change for SPL tokens from GeckoTerminal
+      const splWithBalance = splTokens.filter((t) => t.balance > 0);
+      if (splWithBalance.length > 0) {
+        const displayData: TokenDisplayData[] = [];
+        for (const token of splWithBalance) {
+          let price = 0;
+          let change24h = 0;
+          let logoURI = token.logoURI;
+
+          try {
+            const resp = await fetch(`https://api.geckoterminal.com/api/v2/networks/solana/tokens/${token.mint}`);
+            if (resp.ok) {
+              const data = await resp.json();
+              const attrs = data?.data?.attributes;
+              if (attrs) {
+                price = parseFloat(attrs.price_usd) || 0;
+                change24h = attrs.price_change_percentage?.h24 ? parseFloat(attrs.price_change_percentage.h24) : 0;
+                if (attrs.image_url && attrs.image_url !== 'missing.png' && attrs.image_url.startsWith('http')) {
+                  logoURI = attrs.image_url;
+                }
+                if (!token.name && attrs.name) token.name = attrs.name;
+                if (!token.symbol && attrs.symbol) token.symbol = attrs.symbol;
+              }
+            }
+          } catch {
+            // use defaults
+          }
+
+          displayData.push({
+            mint: token.mint,
+            symbol: token.symbol || token.mint.slice(0, 4),
+            name: token.name || 'Unknown Token',
+            balance: token.balance,
+            uiBalance: token.uiBalance,
+            price,
+            change24h,
+            logoURI,
+          });
+        }
+        setTokenDisplayData(displayData);
+      } else {
+        setTokenDisplayData([]);
       }
     } catch {
       setBalance(0);
@@ -62,7 +111,7 @@ export function DashboardPage() {
   const solMarket = marketCoins.find((c) => c.id === 'solana');
   const solPrice = solMarket?.current_price || 0;
   const usdValue = balance * solPrice;
-  const totalTokenValue = tokens.reduce((sum, t) => sum + t.balance * (tokenPrices.get(t.mint) || 0), 0);
+  const totalTokenValue = tokenDisplayData.reduce((sum, t) => sum + t.balance * t.price, 0);
   const totalUsdValue = usdValue + totalTokenValue;
 
   // Overall 24h change
@@ -224,27 +273,36 @@ export function DashboardPage() {
         )}
 
         {/* SPL Tokens - only show tokens with balance > 0 */}
-        {tokens.filter((t) => t.balance > 0).map((token) => {
-          const price = tokenPrices.get(token.mint) || 0;
-          const tokenUsd = token.balance * price;
+        {tokenDisplayData.map((token) => {
+          const change = formatPercentChange(token.change24h);
           return (
             <div
               key={token.mint}
-              onClick={() => { setSelectedTokenId(token.symbol?.toLowerCase() || token.mint); setCurrentPage('token-detail'); }}
+              onClick={() => { setSelectedTokenId(token.mint); setCurrentPage('token-detail'); }}
               className="flex items-center justify-between px-5 py-4 border-b border-[#1a2a3a]/60 cursor-pointer hover:bg-[#0c1929] transition-colors"
             >
               <div className="flex items-center gap-3">
-                <TokenIcon logoUrl={token.logoURI} symbol={token.symbol} />
+                {token.logoURI ? (
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-[#1a1a2e] flex-shrink-0">
+                    <img src={token.logoURI} alt={token.symbol} className="w-10 h-10 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                  </div>
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-[#1a2a3a] flex items-center justify-center flex-shrink-0">
+                    <span className="text-xs text-gray-400 font-bold">{token.symbol.slice(0, 3)}</span>
+                  </div>
+                )}
                 <div>
-                  <p className="font-semibold text-[15px] text-white">{token.name || token.symbol || 'Unknown'}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{token.symbol || `${token.mint.slice(0, 6)}...`}</p>
+                  <p className="font-semibold text-[15px] text-white">{token.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{token.symbol}</p>
                 </div>
               </div>
               <div className="text-right">
                 <p className="font-bold text-[15px] text-white">{token.uiBalance}</p>
                 <div className="flex items-center gap-1.5 justify-end mt-0.5">
-                  <span className="text-xs text-gray-500">{formatUSD(price)}</span>
-                  <span className="text-xs text-green-400 font-medium">+0.00%</span>
+                  <span className="text-xs text-gray-500">{formatUSD(token.price)}</span>
+                  <span className={`text-xs font-medium ${change.isPositive ? 'text-green-400' : 'text-red-400'}`}>
+                    {change.text}
+                  </span>
                 </div>
               </div>
             </div>
