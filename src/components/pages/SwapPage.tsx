@@ -235,7 +235,9 @@ export function SwapPage() {
   ) => {
     const filteredTokens = searchQuery.length >= 2
       ? [] // When searching, show search results instead
-      : tokens;
+      : isFrom
+        ? tokens.filter((t) => t.balance > 0) // "You pay" only shows owned tokens
+        : tokens;
 
     return (
       <div className="fixed inset-0 bg-black/80 z-50 flex items-start justify-center pt-12 animate-fade-in">
