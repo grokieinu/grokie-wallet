@@ -61,6 +61,9 @@ export const POPULAR_TOKENS = [
   { symbol: 'mSOL', name: 'Marinade SOL', mint: 'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So', decimals: 9, logoURI: 'https://coin-images.coingecko.com/coins/images/17752/large/mSOL.png' },
   { symbol: 'TRUMP', name: 'Official Trump', mint: '6p6xgHyF7AeE6TZkSmFsko444wqoP15icUSqi2jfGiPN', decimals: 6, logoURI: 'https://coin-images.coingecko.com/coins/images/53746/large/trump.jpg' },
   { symbol: 'PENGU', name: 'Pudgy Penguins', mint: '2zMMhcVQEXDtdE6vsFS7S7D5oUodfJHE8vd1gnBouauv', decimals: 6, logoURI: 'https://coin-images.coingecko.com/coins/images/52563/large/pengu.jpg' },
+  { symbol: 'ETH', name: 'Wrapped Ethereum (Wormhole)', mint: '7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs', decimals: 8, logoURI: 'https://coin-images.coingecko.com/coins/images/279/large/ethereum.png' },
+  { symbol: 'BTC', name: 'Wrapped Bitcoin (Sollet)', mint: '9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E', decimals: 6, logoURI: 'https://coin-images.coingecko.com/coins/images/1/large/bitcoin.png' },
+  { symbol: 'tBTC', name: 'Threshold Bitcoin', mint: '6DNSN2BJsaPFdFFc1zP37kkeNe4Usc1Sqkzr9C9vPWcU', decimals: 8, logoURI: 'https://coin-images.coingecko.com/coins/images/11224/large/0x18084fbA666a33d37592fA2633fD49a74DD93a88.png' },
 ];
 
 export interface JupiterTokenInfo {

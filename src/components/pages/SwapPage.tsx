@@ -218,12 +218,40 @@ export function SwapPage() {
       setSearchResults([]);
       return;
     }
+
+    // First: local search in POPULAR_TOKENS list
+    const localMatches: JupiterTokenInfo[] = POPULAR_TOKENS.filter((t) =>
+      t.symbol.toLowerCase().includes(trimmed.toLowerCase()) ||
+      t.name.toLowerCase().includes(trimmed.toLowerCase())
+    ).map((t) => ({
+      address: t.mint,
+      symbol: t.symbol,
+      name: t.name,
+      decimals: t.decimals,
+      logoURI: t.logoURI || undefined,
+    }));
+
+    if (localMatches.length > 0) {
+      setSearchResults(localMatches);
+    }
+
+    // Then: remote search (async)
     setIsSearching(true);
     try {
       const results = await searchTokens(trimmed);
-      setSearchResults(results);
+      // Merge: local matches first, then remote (avoid duplicates)
+      const seen = new Set(localMatches.map((t) => t.address));
+      const merged = [...localMatches];
+      for (const r of results) {
+        if (!seen.has(r.address)) {
+          merged.push(r);
+          seen.add(r.address);
+        }
+      }
+      setSearchResults(merged);
     } catch {
-      setSearchResults([]);
+      // Keep local matches if remote fails
+      if (localMatches.length === 0) setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
