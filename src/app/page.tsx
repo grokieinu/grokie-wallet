@@ -17,6 +17,7 @@ import { SettingsPage } from '@/components/pages/SettingsPage';
 import { TwoFactorPage } from '@/components/pages/TwoFactorPage';
 import { UnlockPage } from '@/components/pages/UnlockPage';
 import { TokenDetailPage } from '@/components/pages/TokenDetailPage';
+import { SwapPage } from '@/components/pages/SwapPage';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import { SplashScreen } from '@/components/ui/SplashScreen';
 
@@ -60,6 +61,8 @@ function AppContent() {
       return <UnlockPage />;
     case 'token-detail':
       return <TokenDetailPage />;
+    case 'swap':
+      return <SwapPage />;
     default:
       return <WelcomePage />;
   }

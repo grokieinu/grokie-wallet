@@ -26,7 +26,8 @@ export type AppPage =
   | 'settings'
   | 'two-factor'
   | 'unlock'
-  | 'token-detail';
+  | 'token-detail'
+  | 'swap';
 
 interface WalletContextType {
   currentPage: AppPage;

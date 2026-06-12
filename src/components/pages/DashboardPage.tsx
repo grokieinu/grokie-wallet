@@ -156,7 +156,7 @@ export function DashboardPage() {
           </button>
 
           <button
-            onClick={() => handleSoon('Swap')}
+            onClick={() => setCurrentPage('swap')}
             className="flex flex-col items-center justify-center gap-2 py-4 rounded-xl bg-[#0a1a2e] border border-[#1e4a7a] hover:border-cyan-500 hover:bg-[#0f2240] transition-all"
           >
             <svg className="w-7 h-7 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
